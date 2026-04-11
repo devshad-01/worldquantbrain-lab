@@ -98,6 +98,7 @@ def authenticate(session: requests.Session, base_url: str) -> None:
     login_candidates = [v for v in [username, email] if v]
     auth_path = env("WQ_AUTH_PATH", "/authentication")
     auth_check_path = env("WQ_AUTH_CHECK_PATH", auth_path)
+    strict_auth_check = as_bool(env("WQ_STRICT_AUTH_CHECK", "0"))
     debug = as_bool(env("WQ_DEBUG", "0"))
 
     auth_url = f"{base_url.rstrip('/')}{auth_path}"
@@ -155,7 +156,15 @@ def authenticate(session: requests.Session, base_url: str) -> None:
         retry_base_sleep=2.0,
     )
     if check_resp.status_code >= 400:
-        raise RuntimeError(f"Auth check failed ({check_resp.status_code}): {check_resp.text[:500]}")
+        # Some deployments deny GET on auth-check endpoint while still allowing login + simulation.
+        if check_resp.status_code in {401, 403, 404} and not strict_auth_check:
+            if debug:
+                print(
+                    f"Auth check returned {check_resp.status_code}; continuing because "
+                    f"WQ_STRICT_AUTH_CHECK=0"
+                )
+        else:
+            raise RuntimeError(f"Auth check failed ({check_resp.status_code}): {check_resp.text[:500]}")
 
     # Some deployments return bearer token, others rely on session cookies.
     try:

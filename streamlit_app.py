@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -35,6 +36,9 @@ class SimResult:
     drawdown: float | None
     config_json: str | None = None
     error: str | None = None
+
+
+_thread_local = threading.local()
 
 
 def to_float(value: Any) -> float | None:
@@ -292,8 +296,13 @@ def fetch_alpha_details(session, base_url: str, alpha_id: str) -> dict:
 
 
 def run_one(expression: str, config_name: str, config: dict[str, Any], base_url: str) -> SimResult:
-    session = make_session()
-    authenticate(session, base_url)
+    session = getattr(_thread_local, "session", None)
+    session_base_url = getattr(_thread_local, "base_url", None)
+    if session is None or session_base_url != base_url:
+        session = make_session()
+        authenticate(session, base_url)
+        _thread_local.session = session
+        _thread_local.base_url = base_url
 
     sim_id = submit_simulation_with_settings(session, base_url, expression, config)
     sim_data = poll_simulation(session, base_url, sim_id)
@@ -326,6 +335,9 @@ def run_parallel(tasks: list[tuple[str, str, dict[str, Any]]], base_url: str, ma
 
     done = 0
     total = len(tasks)
+
+    if total == 0:
+        return results
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map = {
