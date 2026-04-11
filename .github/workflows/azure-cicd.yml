@@ -29,6 +29,18 @@ jobs:
         run: |
           python -m py_compile streamlit_app.py alpha_tuner.py worldquant_api_starter.py
 
+      - name: Sanity check Azure identity variables
+        run: |
+          test -n "${{ vars.AZURE_CLIENT_ID }}" || (echo "Missing repo variable AZURE_CLIENT_ID" && exit 1)
+          test -n "${{ vars.AZURE_TENANT_ID }}" || (echo "Missing repo variable AZURE_TENANT_ID" && exit 1)
+          test -n "${{ vars.AZURE_SUBSCRIPTION_ID }}" || (echo "Missing repo variable AZURE_SUBSCRIPTION_ID" && exit 1)
+
+      - name: Show Azure identity being used
+        run: |
+          echo "AZURE_CLIENT_ID=${{ vars.AZURE_CLIENT_ID }}"
+          echo "AZURE_TENANT_ID=${{ vars.AZURE_TENANT_ID }}"
+          echo "AZURE_SUBSCRIPTION_ID=${{ vars.AZURE_SUBSCRIPTION_ID }}"
+
       - name: Azure login
         uses: azure/login@v2
         with:
@@ -46,9 +58,6 @@ jobs:
 
       - name: Sanity check required variables
         run: |
-          test -n "${{ vars.AZURE_CLIENT_ID }}" || (echo "Missing repo variable AZURE_CLIENT_ID" && exit 1)
-          test -n "${{ vars.AZURE_TENANT_ID }}" || (echo "Missing repo variable AZURE_TENANT_ID" && exit 1)
-          test -n "${{ vars.AZURE_SUBSCRIPTION_ID }}" || (echo "Missing repo variable AZURE_SUBSCRIPTION_ID" && exit 1)
           test -n "${{ steps.vars.outputs.RG }}" || (echo "Missing repo variable AZURE_RESOURCE_GROUP" && exit 1)
           test -n "${{ steps.vars.outputs.APP }}" || (echo "Missing repo variable AZURE_WEBAPP_NAME" && exit 1)
           test -n "${{ steps.vars.outputs.ACR }}" || (echo "Missing repo variable AZURE_CONTAINER_REGISTRY" && exit 1)

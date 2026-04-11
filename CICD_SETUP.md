@@ -101,6 +101,18 @@ az ad app federated-credential create \
 	--parameters federated-credential.json
 ```
 
+If you do not have Azure CLI locally, do the same in Azure Portal:
+
+1. Azure Portal -> **Microsoft Entra ID** -> **App registrations** -> open your app (`github-worldquant-cicd`)
+2. **Certificates & secrets** -> **Federated credentials** -> **Add credential**
+3. Credential scenario: **GitHub Actions deploying Azure resources**
+4. Organization: `devshad-01`
+5. Repository: `worldquantbrain-lab`
+6. Entity type: **Branch**
+7. GitHub branch name: `main`
+8. Name: `github-main-branch`
+9. Click **Add**
+
 ### 3) Save Azure identity values in GitHub Variables
 
 1. Open repo: `https://github.com/devshad-01/worldquantbrain-lab`
