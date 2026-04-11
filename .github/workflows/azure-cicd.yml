@@ -1,0 +1,98 @@
+name: Azure CI/CD
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Python files
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Syntax check
+        run: |
+          python -m py_compile streamlit_app.py alpha_tuner.py worldquant_api_starter.py
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Resolve deployment variables
+        id: vars
+        run: |
+          echo "RG=${{ vars.AZURE_RESOURCE_GROUP }}" >> $GITHUB_OUTPUT
+          echo "APP=${{ vars.AZURE_WEBAPP_NAME }}" >> $GITHUB_OUTPUT
+          echo "ACR=${{ vars.AZURE_CONTAINER_REGISTRY }}" >> $GITHUB_OUTPUT
+          echo "IMG=${{ vars.AZURE_IMAGE_NAME }}" >> $GITHUB_OUTPUT
+
+      - name: Sanity check required variables
+        run: |
+          test -n "${{ steps.vars.outputs.RG }}" || (echo "Missing repo variable AZURE_RESOURCE_GROUP" && exit 1)
+          test -n "${{ steps.vars.outputs.APP }}" || (echo "Missing repo variable AZURE_WEBAPP_NAME" && exit 1)
+          test -n "${{ steps.vars.outputs.ACR }}" || (echo "Missing repo variable AZURE_CONTAINER_REGISTRY" && exit 1)
+          test -n "${{ steps.vars.outputs.IMG }}" || (echo "Missing repo variable AZURE_IMAGE_NAME" && exit 1)
+
+      - name: Login to ACR
+        run: az acr login --name "${{ steps.vars.outputs.ACR }}"
+
+      - name: Build and push image
+        run: |
+          IMAGE="${{ steps.vars.outputs.ACR }}.azurecr.io/${{ steps.vars.outputs.IMG }}:${{ env.IMAGE_TAG }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Ensure managed identity and AcrPull
+        run: |
+          APP_ID=$(az webapp identity assign -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}" --query principalId -o tsv)
+          ACR_ID=$(az acr show -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.ACR }}" --query id -o tsv)
+          az role assignment create --assignee "$APP_ID" --scope "$ACR_ID" --role AcrPull || true
+
+      - name: Configure web app container
+        run: |
+          az webapp config container set \
+            -g "${{ steps.vars.outputs.RG }}" \
+            -n "${{ steps.vars.outputs.APP }}" \
+            --container-image-name "$IMAGE" \
+            --container-registry-url "https://${{ steps.vars.outputs.ACR }}.azurecr.io"
+
+      - name: Configure required app settings
+        run: |
+          az webapp config appsettings set \
+            -g "${{ steps.vars.outputs.RG }}" \
+            -n "${{ steps.vars.outputs.APP }}" \
+            --settings \
+              WEBSITES_PORT=8000 \
+              WQ_BASE_URL="${{ secrets.WQ_BASE_URL }}" \
+              WQ_EMAIL="${{ secrets.WQ_EMAIL }}" \
+              WQ_PASSWORD="${{ secrets.WQ_PASSWORD }}" \
+              WQ_AUTH_PATH="${{ secrets.WQ_AUTH_PATH }}" \
+              WQ_AUTH_CHECK_PATH="${{ secrets.WQ_AUTH_CHECK_PATH }}" \
+              WQ_SIMULATIONS_PATH="${{ secrets.WQ_SIMULATIONS_PATH }}" \
+              WQ_SIMULATION_RESULT_TEMPLATE="${{ secrets.WQ_SIMULATION_RESULT_TEMPLATE }}" \
+              WQ_ALPHA_RESULT_TEMPLATE="${{ secrets.WQ_ALPHA_RESULT_TEMPLATE }}"
+
+      - name: Restart web app
+        run: az webapp restart -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}"
+
+      - name: Show app URL
+        run: |
+          URL=$(az webapp show -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}" --query defaultHostName -o tsv)
+          echo "Deployed to: https://$URL"
