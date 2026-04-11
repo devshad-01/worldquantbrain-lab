@@ -32,7 +32,9 @@ jobs:
       - name: Azure login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve deployment variables
         id: vars
@@ -44,6 +46,9 @@ jobs:
 
       - name: Sanity check required variables
         run: |
+          test -n "${{ vars.AZURE_CLIENT_ID }}" || (echo "Missing repo variable AZURE_CLIENT_ID" && exit 1)
+          test -n "${{ vars.AZURE_TENANT_ID }}" || (echo "Missing repo variable AZURE_TENANT_ID" && exit 1)
+          test -n "${{ vars.AZURE_SUBSCRIPTION_ID }}" || (echo "Missing repo variable AZURE_SUBSCRIPTION_ID" && exit 1)
           test -n "${{ steps.vars.outputs.RG }}" || (echo "Missing repo variable AZURE_RESOURCE_GROUP" && exit 1)
           test -n "${{ steps.vars.outputs.APP }}" || (echo "Missing repo variable AZURE_WEBAPP_NAME" && exit 1)
           test -n "${{ steps.vars.outputs.ACR }}" || (echo "Missing repo variable AZURE_CONTAINER_REGISTRY" && exit 1)

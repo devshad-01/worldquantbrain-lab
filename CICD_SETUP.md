@@ -56,11 +56,11 @@ This means: **when you push to `main`, GitHub can deploy your app to Azure autom
 
 ---
 
-## Part B — Let GitHub talk to Azure
+## Part B — Let GitHub talk to Azure (OIDC, no client secret)
 
-You need one Azure credential secret called `AZURE_CREDENTIALS`.
+This project uses **OIDC** for Azure login. You do **not** need `AZURE_CREDENTIALS`.
 
-### 1) Create a Service Principal from terminal
+### 1) Create (or reuse) a Service Principal
 
 Run this on your machine (must have Azure CLI and be logged in):
 
@@ -68,26 +68,48 @@ Run this on your machine (must have Azure CLI and be logged in):
 az login
 
 SUB_ID=$(az account show --query id -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
 RG=rg-worldquant-alpha
+APP_NAME=github-worldquant-cicd
 
-az ad sp create-for-rbac \
-	--name "github-worldquant-cicd" \
+az ad app create --display-name "$APP_NAME"
+APP_ID=$(az ad app list --display-name "$APP_NAME" --query "[0].appId" -o tsv)
+SP_ID=$(az ad sp create --id "$APP_ID" --query id -o tsv)
+
+az role assignment create \
+	--assignee-object-id "$SP_ID" \
+	--assignee-principal-type ServicePrincipal \
 	--role contributor \
-	--scopes /subscriptions/$SUB_ID/resourceGroups/$RG \
-	--sdk-auth
+	--scope /subscriptions/$SUB_ID/resourceGroups/$RG
 ```
 
-It prints JSON. **Copy all of it**.
+### 2) Add federated credential for GitHub Actions
 
-### 2) Save that JSON in GitHub Secret
+```bash
+cat > federated-credential.json <<'JSON'
+{
+	"name": "github-main-branch",
+	"issuer": "https://token.actions.githubusercontent.com",
+	"subject": "repo:devshad-01/worldquantbrain-lab:ref:refs/heads/main",
+	"description": "GitHub Actions OIDC for main branch",
+	"audiences": ["api://AzureADTokenExchange"]
+}
+JSON
 
-1. Open your repo: `https://github.com/devshad-01/worldquantbrain-lab`
+az ad app federated-credential create \
+	--id "$APP_ID" \
+	--parameters federated-credential.json
+```
+
+### 3) Save Azure identity values in GitHub Variables
+
+1. Open repo: `https://github.com/devshad-01/worldquantbrain-lab`
 2. Go to **Settings**
 3. Go to **Secrets and variables** -> **Actions**
-4. In **Secrets** tab, click **New repository secret**
-5. Name: `AZURE_CREDENTIALS`
-6. Paste JSON from previous step
-7. Save
+4. Open **Variables** tab and add:
+   - `AZURE_CLIENT_ID` = `$APP_ID`
+   - `AZURE_TENANT_ID` = `$TENANT_ID`
+   - `AZURE_SUBSCRIPTION_ID` = `$SUB_ID`
 
 ---
 
@@ -136,15 +158,14 @@ Push any commit to `main`.
 1. In GitHub Actions, open the latest run
 2. Make sure all steps are green
 3. Last step prints URL like:
-	 - `https://<your-webapp>.azurewebsites.net`
+   - `https://<your-webapp>.azurewebsites.net`
 4. Open it in browser
 
 ---
 
 ## Common mistakes (and fix)
 
-- **Workflow fails at Azure login** -> `AZURE_CREDENTIALS` JSON is wrong/missing
+- **Workflow fails at Azure login** -> missing/wrong `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, or missing federated credential subject
 - **Container pull fails** -> ACR name variable wrong or AcrPull role missing
 - **App starts but errors inside** -> missing `WQ_*` secrets
 - **Too many 429 API errors** -> reduce workers in app UI to 2 or 3
-
