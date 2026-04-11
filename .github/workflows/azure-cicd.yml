@@ -46,12 +46,18 @@ jobs:
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           allow-no-subscriptions: true
 
       - name: Set Azure subscription context
         run: |
-          az account set --subscription "${{ vars.AZURE_SUBSCRIPTION_ID }}"
+          TARGET_SUB="${{ vars.AZURE_SUBSCRIPTION_ID }}"
+          if ! az account set --subscription "$TARGET_SUB"; then
+            echo "Could not select subscription '$TARGET_SUB'."
+            echo "Verify AZURE_SUBSCRIPTION_ID, AZURE_TENANT_ID, and RBAC assignment for AZURE_CLIENT_ID."
+            echo "Subscriptions visible to this identity:"
+            az account list -o table || true
+            exit 1
+          fi
           az account show --query "{name:name,id:id,tenantId:tenantId}" -o json
 
       - name: Resolve deployment variables
