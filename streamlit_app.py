@@ -448,7 +448,14 @@ def main() -> None:
                 authenticate(s, base_url)
                 st.success("Auth check passed")
             except Exception as exc:
-                st.error(f"Health check failed: {exc}")
+                msg = str(exc)
+                if "Auth check failed (403)" in msg or "Auth check failed (404)" in msg:
+                    st.warning(
+                        "Auth endpoint verification is restricted (403/404), which is common in some environments. "
+                        "Login may still work for simulation requests."
+                    )
+                else:
+                    st.error(f"Health check failed: {exc}")
 
     col_left, col_right = st.columns([2, 1])
 
