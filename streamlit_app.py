@@ -1,5 +1,6 @@
 import concurrent.futures
 import datetime as dt
+import hmac
 import json
 import os
 import re
@@ -426,16 +427,62 @@ def with_derived_metrics(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def app_auth_enabled() -> bool:
+    return env("APP_AUTH_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def require_app_authentication() -> bool:
+    if not app_auth_enabled():
+        return True
+
+    if st.session_state.get("app_auth_ok"):
+        return True
+
+    st.subheader("Sign in")
+    st.caption("This app is protected. Enter your credentials to continue.")
+
+    with st.form("app_login"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Sign in", type="primary")
+
+    if submitted:
+        expected_user = env("APP_AUTH_USERNAME", "")
+        expected_pass = env("APP_AUTH_PASSWORD", "")
+        valid = (
+            bool(expected_user)
+            and bool(expected_pass)
+            and hmac.compare_digest(username, expected_user)
+            and hmac.compare_digest(password, expected_pass)
+        )
+        if valid:
+            st.session_state["app_auth_ok"] = True
+            st.rerun()
+        else:
+            st.error("Invalid credentials")
+
+    return False
+
+
 def main() -> None:
     st.set_page_config(page_title="WorldQuant Alpha Lab", layout="wide")
     st.title("WorldQuant Alpha Lab")
     st.caption("Bulk alpha simulation, settings sweeps, parallel workers, and leaderboard export")
 
     load_env_file()
+    if not require_app_authentication():
+        st.stop()
+
     db_path = Path("alpha_lab_history.db")
     init_history_db(db_path)
 
     with st.sidebar:
+        if app_auth_enabled() and st.session_state.get("app_auth_ok"):
+            if st.button("Sign out"):
+                st.session_state["app_auth_ok"] = False
+                st.rerun()
+            st.divider()
+
         st.header("Run Controls")
         mode = st.selectbox("Mode", ["Alpha Sweep", "Settings Sweep", "Hybrid (Top-N then Sweep)"])
         max_workers = st.slider("Parallel workers", min_value=1, max_value=8, value=3, step=1)

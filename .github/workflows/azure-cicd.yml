@@ -6,8 +6,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
+
+concurrency:
+  group: azure-cicd-production
+  cancel-in-progress: false
 
 env:
   IMAGE_TAG: ${{ github.sha }}
@@ -15,6 +18,7 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -44,6 +48,11 @@ jobs:
           test -n "${{ steps.vars.outputs.ACR }}" || (echo "Missing repo variable AZURE_CONTAINER_REGISTRY" && exit 1)
           test -n "${{ steps.vars.outputs.IMG }}" || (echo "Missing repo variable AZURE_IMAGE_NAME" && exit 1)
 
+      - name: Sanity check required deployment secrets
+        run: |
+          test -n "${{ secrets.ACR_USERNAME }}" || (echo "Missing secret ACR_USERNAME" && exit 1)
+          test -n "${{ secrets.ACR_PASSWORD }}" || (echo "Missing secret ACR_PASSWORD" && exit 1)
+
       - name: Login to ACR
         uses: docker/login-action@v3
         with:
@@ -52,18 +61,19 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Build and push image
+        id: build
         run: |
           IMAGE="${{ steps.vars.outputs.ACR }}.azurecr.io/${{ steps.vars.outputs.IMG }}:${{ env.IMAGE_TAG }}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
-          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
       - name: Deploy container to Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ steps.vars.outputs.APP }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          images: ${{ env.IMAGE }}
+          images: ${{ steps.build.outputs.image }}
 
       - name: Show app URL
         run: |

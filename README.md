@@ -20,6 +20,13 @@ After many auth/subscription issues, the stable path is:
 2. Deploy to Azure Web App using **publish profile** (`azure/webapps-deploy`)
 3. Keep app settings configured in Azure Portal (one-time), not in CI
 
+Professional hardening included:
+
+- Concurrency-controlled production deployments
+- Job timeout and least-privilege GitHub Actions permissions
+- Dedicated security workflow (`bandit` + `pip-audit`)
+- Optional in-app authentication gate (`APP_AUTH_*`)
+
 This avoids brittle Azure CLI subscription context issues in CI.
 
 ---
@@ -42,11 +49,13 @@ Set in: `Settings -> Secrets and variables -> Actions -> Variables`
 Set in: `Settings -> Secrets and variables -> Actions -> Secrets`
 
 ### Deployment secrets
+
 - `ACR_USERNAME`
 - `ACR_PASSWORD`
 - `AZURE_WEBAPP_PUBLISH_PROFILE`
 
 ### App runtime secrets
+
 - `WQ_BASE_URL`
 - `WQ_EMAIL`
 - `WQ_PASSWORD`
@@ -55,6 +64,12 @@ Set in: `Settings -> Secrets and variables -> Actions -> Secrets`
 - `WQ_SIMULATIONS_PATH`
 - `WQ_SIMULATION_RESULT_TEMPLATE`
 - `WQ_ALPHA_RESULT_TEMPLATE`
+
+### Optional app authentication secrets (recommended)
+
+- `APP_AUTH_ENABLED` (App Service env var, set to `1` to enable)
+- `APP_AUTH_USERNAME` (App Service env var)
+- `APP_AUTH_PASSWORD` (App Service env var)
 
 ---
 
@@ -114,6 +129,12 @@ Azure Portal -> App Service (`worldquant-alpha-lab-shad01`) -> `Settings -> Envi
 - `WQ_SIMULATION_RESULT_TEMPLATE`
 - `WQ_ALPHA_RESULT_TEMPLATE`
 
+Optional auth controls:
+
+- `APP_AUTH_ENABLED=1`
+- `APP_AUTH_USERNAME=<secure-username>`
+- `APP_AUTH_PASSWORD=<strong-password>`
+
 After saving, restart the app once.
 
 ---
@@ -149,6 +170,17 @@ If you stay on publish-profile deployment:
 
 ---
 
+## Security and governance checklist
+
+- Enable branch protection on `main`
+- Require PR reviews for workflow changes
+- Restrict access to Actions secrets and variables
+- Rotate publish profile and ACR credentials periodically
+- Keep `APP_AUTH_ENABLED=1` for internet-exposed deployments
+- Review `SECURITY.md` for incident/reporting process
+
+---
+
 ## Quick preflight checklist for next app
 
 Before first deploy:
@@ -165,6 +197,8 @@ Before first deploy:
 ## Useful files in this repo
 
 - `.github/workflows/azure-cicd.yml` — active deployment pipeline
+- `.github/workflows/security-checks.yml` — automated security checks (Bandit + pip-audit)
+- `SECURITY.md` — security policy and operational guidance
 - `AZURE_DEPLOY.md` — Azure hosting notes
 - `CICD_SETUP.md` — setup steps and context
 - `STREAMLIT_QUICKSTART.md` — local app run instructions
