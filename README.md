@@ -18,7 +18,7 @@ After many auth/subscription issues, the stable path is:
 
 1. Build + push image to ACR using Docker login credentials
 2. Deploy to Azure Web App using **publish profile** (`azure/webapps-deploy`)
-3. Configure app settings using **publish profile** (`azure/appservice-settings`)
+3. Keep app settings configured in Azure Portal (one-time), not in CI
 
 This avoids brittle Azure CLI subscription context issues in CI.
 
@@ -94,8 +94,27 @@ Expected successful flow:
 5. Login to ACR
 6. Build and push image
 7. Deploy container to Web App
-8. Configure required app settings
-9. Show app URL
+8. Show app URL
+
+---
+
+## One-time App Service settings (manual)
+
+Because the current CI path uses publish profile deployment only, set these in Azure once:
+
+Azure Portal -> App Service (`worldquant-alpha-lab-shad01`) -> `Settings -> Environment variables`
+
+- `WEBSITES_PORT=8000`
+- `WQ_BASE_URL`
+- `WQ_EMAIL`
+- `WQ_PASSWORD`
+- `WQ_AUTH_PATH`
+- `WQ_AUTH_CHECK_PATH`
+- `WQ_SIMULATIONS_PATH`
+- `WQ_SIMULATION_RESULT_TEMPLATE`
+- `WQ_ALPHA_RESULT_TEMPLATE`
+
+After saving, restart the app once.
 
 ---
 

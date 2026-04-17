@@ -65,24 +65,6 @@ jobs:
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           images: ${{ env.IMAGE }}
 
-      - name: Configure required app settings
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: ${{ steps.vars.outputs.APP }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          app-settings-json: |
-            [
-              {"name":"WEBSITES_PORT","value":"8000","slotSetting":false},
-              {"name":"WQ_BASE_URL","value":"${{ secrets.WQ_BASE_URL }}","slotSetting":false},
-              {"name":"WQ_EMAIL","value":"${{ secrets.WQ_EMAIL }}","slotSetting":false},
-              {"name":"WQ_PASSWORD","value":"${{ secrets.WQ_PASSWORD }}","slotSetting":false},
-              {"name":"WQ_AUTH_PATH","value":"${{ secrets.WQ_AUTH_PATH }}","slotSetting":false},
-              {"name":"WQ_AUTH_CHECK_PATH","value":"${{ secrets.WQ_AUTH_CHECK_PATH }}","slotSetting":false},
-              {"name":"WQ_SIMULATIONS_PATH","value":"${{ secrets.WQ_SIMULATIONS_PATH }}","slotSetting":false},
-              {"name":"WQ_SIMULATION_RESULT_TEMPLATE","value":"${{ secrets.WQ_SIMULATION_RESULT_TEMPLATE }}","slotSetting":false},
-              {"name":"WQ_ALPHA_RESULT_TEMPLATE","value":"${{ secrets.WQ_ALPHA_RESULT_TEMPLATE }}","slotSetting":false}
-            ]
-
       - name: Show app URL
         run: |
           URL="${{ steps.vars.outputs.APP }}.azurewebsites.net"
