@@ -48,17 +48,10 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
 
-      - name: Set Azure subscription context
+      - name: Verify target subscription access
         run: |
-          TARGET_SUB="${{ vars.AZURE_SUBSCRIPTION_ID }}"
-          if ! az account set --subscription "$TARGET_SUB"; then
-            echo "Could not select subscription '$TARGET_SUB'."
-            echo "Verify AZURE_SUBSCRIPTION_ID, AZURE_TENANT_ID, and RBAC assignment for AZURE_CLIENT_ID."
-            echo "Subscriptions visible to this identity:"
-            az account list -o table || true
-            exit 1
-          fi
-          az account show --query "{name:name,id:id,tenantId:tenantId}" -o json
+          SUB="${{ vars.AZURE_SUBSCRIPTION_ID }}"
+          az account show --subscription "$SUB" --query "{name:name,id:id,tenantId:tenantId}" -o json
 
       - name: Resolve deployment variables
         id: vars
@@ -76,7 +69,7 @@ jobs:
           test -n "${{ steps.vars.outputs.IMG }}" || (echo "Missing repo variable AZURE_IMAGE_NAME" && exit 1)
 
       - name: Login to ACR
-        run: az acr login --name "${{ steps.vars.outputs.ACR }}"
+        run: az acr login --subscription "${{ vars.AZURE_SUBSCRIPTION_ID }}" --name "${{ steps.vars.outputs.ACR }}"
 
       - name: Build and push image
         run: |
@@ -87,13 +80,14 @@ jobs:
 
       - name: Ensure managed identity and AcrPull
         run: |
-          APP_ID=$(az webapp identity assign -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}" --query principalId -o tsv)
-          ACR_ID=$(az acr show -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.ACR }}" --query id -o tsv)
-          az role assignment create --assignee "$APP_ID" --scope "$ACR_ID" --role AcrPull || true
+          APP_ID=$(az webapp identity assign --subscription "${{ vars.AZURE_SUBSCRIPTION_ID }}" -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}" --query principalId -o tsv)
+          ACR_ID=$(az acr show --subscription "${{ vars.AZURE_SUBSCRIPTION_ID }}" -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.ACR }}" --query id -o tsv)
+          az role assignment create --subscription "${{ vars.AZURE_SUBSCRIPTION_ID }}" --assignee "$APP_ID" --scope "$ACR_ID" --role AcrPull || true
 
       - name: Configure web app container
         run: |
           az webapp config container set \
+            --subscription "${{ vars.AZURE_SUBSCRIPTION_ID }}" \
             -g "${{ steps.vars.outputs.RG }}" \
             -n "${{ steps.vars.outputs.APP }}" \
             --container-image-name "$IMAGE" \
@@ -102,6 +96,7 @@ jobs:
       - name: Configure required app settings
         run: |
           az webapp config appsettings set \
+            --subscription "${{ vars.AZURE_SUBSCRIPTION_ID }}" \
             -g "${{ steps.vars.outputs.RG }}" \
             -n "${{ steps.vars.outputs.APP }}" \
             --settings \
@@ -116,9 +111,9 @@ jobs:
               WQ_ALPHA_RESULT_TEMPLATE="${{ secrets.WQ_ALPHA_RESULT_TEMPLATE }}"
 
       - name: Restart web app
-        run: az webapp restart -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}"
+        run: az webapp restart --subscription "${{ vars.AZURE_SUBSCRIPTION_ID }}" -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}"
 
       - name: Show app URL
         run: |
-          URL=$(az webapp show -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}" --query defaultHostName -o tsv)
+          URL=$(az webapp show --subscription "${{ vars.AZURE_SUBSCRIPTION_ID }}" -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}" --query defaultHostName -o tsv)
           echo "Deployed to: https://$URL"
