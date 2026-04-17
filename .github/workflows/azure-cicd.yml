@@ -29,41 +29,6 @@ jobs:
         run: |
           python -m py_compile streamlit_app.py alpha_tuner.py worldquant_api_starter.py
 
-      - name: Sanity check Azure identity variables
-        run: |
-          test -n "${{ vars.AZURE_CLIENT_ID }}" || (echo "Missing repo variable AZURE_CLIENT_ID" && exit 1)
-          test -n "${{ vars.AZURE_TENANT_ID }}" || (echo "Missing repo variable AZURE_TENANT_ID" && exit 1)
-          test -n "${{ vars.AZURE_SUBSCRIPTION_ID }}" || (echo "Missing repo variable AZURE_SUBSCRIPTION_ID" && exit 1)
-
-      - name: Show Azure identity being used
-        run: |
-          echo "AZURE_CLIENT_ID=${{ vars.AZURE_CLIENT_ID }}"
-          echo "AZURE_TENANT_ID=${{ vars.AZURE_TENANT_ID }}"
-          echo "AZURE_SUBSCRIPTION_ID=${{ vars.AZURE_SUBSCRIPTION_ID }}"
-
-      - name: Normalize subscription id
-        id: sub
-        run: |
-          SUB_RAW='${{ vars.AZURE_SUBSCRIPTION_ID }}'
-          SUB="$(echo "$SUB_RAW" | tr -d '\r\n\t ' )"
-          echo "SUB=$SUB" >> $GITHUB_OUTPUT
-          echo "Using normalized subscription id: $SUB"
-
-      - name: Azure login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          allow-no-subscriptions: true
-
-      - name: Verify target subscription access
-        run: |
-          SUB="${{ steps.sub.outputs.SUB }}"
-          az account show --subscription "$SUB" --query "{name:name,id:id,tenantId:tenantId}" -o json || {
-            echo "Subscription check failed for '$SUB'. Continuing to resource-level commands with explicit --subscription."
-            echo "If later steps fail with authorization/subscription errors, re-check AZURE_SUBSCRIPTION_ID and role assignments."
-          }
-
       - name: Resolve deployment variables
         id: vars
         run: |
@@ -79,8 +44,18 @@ jobs:
           test -n "${{ steps.vars.outputs.ACR }}" || (echo "Missing repo variable AZURE_CONTAINER_REGISTRY" && exit 1)
           test -n "${{ steps.vars.outputs.IMG }}" || (echo "Missing repo variable AZURE_IMAGE_NAME" && exit 1)
 
+      - name: Sanity check required secrets
+        run: |
+          test -n "${{ secrets.ACR_USERNAME }}" || (echo "Missing secret ACR_USERNAME" && exit 1)
+          test -n "${{ secrets.ACR_PASSWORD }}" || (echo "Missing secret ACR_PASSWORD" && exit 1)
+          test -n "${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}" || (echo "Missing secret AZURE_WEBAPP_PUBLISH_PROFILE" && exit 1)
+
       - name: Login to ACR
-        run: az acr login --subscription "${{ steps.sub.outputs.SUB }}" --name "${{ steps.vars.outputs.ACR }}"
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.vars.outputs.ACR }}.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Build and push image
         run: |
@@ -89,42 +64,32 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      - name: Ensure managed identity and AcrPull
-        run: |
-          APP_ID=$(az webapp identity assign --subscription "${{ steps.sub.outputs.SUB }}" -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}" --query principalId -o tsv)
-          ACR_ID=$(az acr show --subscription "${{ steps.sub.outputs.SUB }}" -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.ACR }}" --query id -o tsv)
-          az role assignment create --subscription "${{ steps.sub.outputs.SUB }}" --assignee "$APP_ID" --scope "$ACR_ID" --role AcrPull || true
-
-      - name: Configure web app container
-        run: |
-          az webapp config container set \
-            --subscription "${{ steps.sub.outputs.SUB }}" \
-            -g "${{ steps.vars.outputs.RG }}" \
-            -n "${{ steps.vars.outputs.APP }}" \
-            --container-image-name "$IMAGE" \
-            --container-registry-url "https://${{ steps.vars.outputs.ACR }}.azurecr.io"
+      - name: Deploy container to Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.vars.outputs.APP }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          images: ${{ env.IMAGE }}
 
       - name: Configure required app settings
-        run: |
-          az webapp config appsettings set \
-            --subscription "${{ steps.sub.outputs.SUB }}" \
-            -g "${{ steps.vars.outputs.RG }}" \
-            -n "${{ steps.vars.outputs.APP }}" \
-            --settings \
-              WEBSITES_PORT=8000 \
-              WQ_BASE_URL="${{ secrets.WQ_BASE_URL }}" \
-              WQ_EMAIL="${{ secrets.WQ_EMAIL }}" \
-              WQ_PASSWORD="${{ secrets.WQ_PASSWORD }}" \
-              WQ_AUTH_PATH="${{ secrets.WQ_AUTH_PATH }}" \
-              WQ_AUTH_CHECK_PATH="${{ secrets.WQ_AUTH_CHECK_PATH }}" \
-              WQ_SIMULATIONS_PATH="${{ secrets.WQ_SIMULATIONS_PATH }}" \
-              WQ_SIMULATION_RESULT_TEMPLATE="${{ secrets.WQ_SIMULATION_RESULT_TEMPLATE }}" \
-              WQ_ALPHA_RESULT_TEMPLATE="${{ secrets.WQ_ALPHA_RESULT_TEMPLATE }}"
-
-      - name: Restart web app
-        run: az webapp restart --subscription "${{ steps.sub.outputs.SUB }}" -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}"
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: ${{ steps.vars.outputs.APP }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          app-settings-json: |
+            [
+              {"name":"WEBSITES_PORT","value":"8000","slotSetting":false},
+              {"name":"WQ_BASE_URL","value":"${{ secrets.WQ_BASE_URL }}","slotSetting":false},
+              {"name":"WQ_EMAIL","value":"${{ secrets.WQ_EMAIL }}","slotSetting":false},
+              {"name":"WQ_PASSWORD","value":"${{ secrets.WQ_PASSWORD }}","slotSetting":false},
+              {"name":"WQ_AUTH_PATH","value":"${{ secrets.WQ_AUTH_PATH }}","slotSetting":false},
+              {"name":"WQ_AUTH_CHECK_PATH","value":"${{ secrets.WQ_AUTH_CHECK_PATH }}","slotSetting":false},
+              {"name":"WQ_SIMULATIONS_PATH","value":"${{ secrets.WQ_SIMULATIONS_PATH }}","slotSetting":false},
+              {"name":"WQ_SIMULATION_RESULT_TEMPLATE","value":"${{ secrets.WQ_SIMULATION_RESULT_TEMPLATE }}","slotSetting":false},
+              {"name":"WQ_ALPHA_RESULT_TEMPLATE","value":"${{ secrets.WQ_ALPHA_RESULT_TEMPLATE }}","slotSetting":false}
+            ]
 
       - name: Show app URL
         run: |
-          URL=$(az webapp show --subscription "${{ steps.sub.outputs.SUB }}" -g "${{ steps.vars.outputs.RG }}" -n "${{ steps.vars.outputs.APP }}" --query defaultHostName -o tsv)
+          URL="${{ steps.vars.outputs.APP }}.azurewebsites.net"
           echo "Deployed to: https://$URL"
