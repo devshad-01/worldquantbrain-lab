@@ -24,7 +24,6 @@ Professional hardening included:
 
 - Concurrency-controlled production deployments
 - Job timeout and least-privilege GitHub Actions permissions
-- Dedicated security workflow (`bandit` + `pip-audit`)
 - Optional in-app authentication gate (`APP_AUTH_*`)
 
 This avoids brittle Azure CLI subscription context issues in CI.
@@ -197,11 +196,22 @@ Before first deploy:
 ## Useful files in this repo
 
 - `.github/workflows/azure-cicd.yml` — active deployment pipeline
-- `.github/workflows/security-checks.yml` — automated security checks (Bandit + pip-audit)
 - `SECURITY.md` — security policy and operational guidance
-- `AZURE_DEPLOY.md` — Azure hosting notes
-- `CICD_SETUP.md` — setup steps and context
-- `STREAMLIT_QUICKSTART.md` — local app run instructions
+- `docs/guides/AZURE_DEPLOY.md` — Azure hosting notes
+- `docs/guides/CICD_SETUP.md` — setup steps and context
+- `docs/guides/STREAMLIT_QUICKSTART.md` — local app run instructions
+- `docs/reference/WorldQuant BRAINOperations.md` — reference notes
+
+---
+
+## Project structure
+
+- `streamlit_app.py` — main app entrypoint
+- `worldquant_api_starter.py` — API helper client
+- `alpha_tuner.py` — tuning utilities
+- `.github/workflows/azure-cicd.yml` — deployment workflow
+- `docs/guides/` — deployment and setup guides
+- `docs/reference/` — reference documentation
 
 ---
 
